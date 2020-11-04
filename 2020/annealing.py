@@ -23,7 +23,8 @@ def muller_potential(x, y, openMM = True):
     
     # accumulate potentials
     return(np.sum(A*np.exp(a*(x-x0)**2+b*(x-x0)*(y-y0)+c*(y-y0)**2)))
-    
+
+
 def muller_potential_grid(X, Y, probability = False, T = 300, theta = 1, openMM = True):
     """ Computes the 2D Muller potential over a grid """    
     # get shape of the grid and then compute and store results
@@ -41,9 +42,8 @@ def muller_potential_grid(X, Y, probability = False, T = 300, theta = 1, openMM 
     # return the potential grid
     return(potential)
 
-
-
-def plot_muller_potential(x_min = -2.0, x_max = 1.0, y_min = -1.0, y_max = 2.5, delta = 0.025, origin = 'lower', colors = plt.cm.viridis, clip_max = 120, clip_min = -150, probability = False, T = 300, theta = 1, color_bar = "Energy"):
+    
+def plot_muller_potential(x_min = -2.0, x_max = 1.0, y_min = -1.0, y_max = 2.5, delta = 0.025, origin = 'lower', colors = plt.cm.viridis, clip_max = 120, clip_min = -150, probability = False, T = 300, theta = 1, color_bar = "Energy", title = 'Muller Potential'):
     """ Plots the 2D Muller potential """    
     # set up grid and compute potential
     x = np.arange(x_min, x_max, delta)
@@ -58,7 +58,7 @@ def plot_muller_potential(x_min = -2.0, x_max = 1.0, y_min = -1.0, y_max = 2.5, 
     CS2 = ax2.contour(CS, levels=CS.levels[::1], colors='r', origin=origin)
     
     # labels
-    ax2.set_title('Muller Potential')
+    ax2.set_title(title)
     ax2.set_xlabel('Coordinate-X')
     ax2.set_ylabel('Coordinate-Y')
 
