@@ -206,14 +206,13 @@ def get_model(n_inputs, n_outputs, loss):
     
     """    
     model = Sequential()
-    model.add(Dense(12, input_dim=n_inputs, kernel_initializer='he_uniform', activation='relu'))
-    model.add(Dense(6, activation='relu'))
+    model.add(Dense(25, input_dim=n_inputs, kernel_initializer='he_uniform', activation='relu'))
     model.add(Dense(n_outputs))
     model.compile(loss=loss, optimizer='adam')
     return model
  
 
-def train_model(y, X, verbose=0, epochs=1000, batch_size=10, loss = "mae"):
+def train_model(y, X, y_val=None, X_val=None, verbose=0, epochs=1000, batch_size=10, loss = "mae", callbacks = []):
     """ Train a Keras model
     
     y: Numpy array with training targets (this is what we want to predict)
@@ -231,13 +230,18 @@ def train_model(y, X, verbose=0, epochs=1000, batch_size=10, loss = "mae"):
     """     
     # get dimensions of the features and targets
     n_inputs, n_outputs = X.shape[1], y.shape[1]
-    print(n_inputs, n_outputs)
     
     # initialize model
     model = get_model(n_inputs, n_outputs, loss)
     
     # fit model
-    model.fit(X, y, verbose=verbose, epochs=epochs, batch_size=batch_size)
+    if X_val is None or y_val is None:
+        X_val, yval = X, y
+        print("Warning: created fake validation set")
+    else:
+        print("Warning: Working with user supplied validation set")
+        
+    model.fit(X, y, verbose=verbose, epochs=epochs, batch_size=batch_size, callbacks=callbacks, validation_data=(X_val, y_val))
     
     # return model
     return model
