@@ -5,8 +5,17 @@ from numpy import mean, nan
 from numpy import std
 from sklearn.datasets import make_regression
 from sklearn.model_selection import RepeatedKFold
-from keras.models import Sequential
-from keras.layers import Dense
+from sklearn.metrics import mean_absolute_error
+from sklearn import preprocessing
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import StandardScaler
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import Dense, Dropout
+from talos.model.normalizers import lr_normalizer
+from talos.model import hidden_layers
+import talos
+from keras.callbacks import TensorBoard
+import numpy as np
 import pandas as pd
 
 def muller_potential_force(x, y, openMM = True):
@@ -212,6 +221,63 @@ def get_model(n_inputs, n_outputs, loss):
     return model
  
 
+# first we have to make sure to input data and params into the function
+def talos_model(x_train, y_train, x_val, y_val, params):
+    # https://towardsdatascience.com/hyperparameter-optimization-with-keras-b82e6364ca53
+    # next we can build the model exactly like we would normally do it
+    model = Sequential()
+    model.add(Dense(params['first_neuron'], input_dim=x_train.shape[1],
+                    activation=params['activation'],
+                    kernel_initializer=params['kernel_initializer']))
+    
+    model.add(Dropout(params['dropout']))
+
+    model.add(Dense(y_train.shape[1], activation=params['last_activation'],
+                    kernel_initializer=params['kernel_initializer']))
+    
+    model.compile(loss=params['losses'],
+                  optimizer=params['optimizer'],
+                      metrics=['acc'])
+    history = model.fit(x_train, y_train, 
+                            validation_data=(x_val, y_val),
+                            batch_size=params['batch_size'],
+                            epochs=params['epochs'],
+                            verbose=0)    
+    # finally we have to make sure that history object and model are returned
+    return history, model
+
+def talos_search_space():
+    p = {'lr': (0.5, 5, 10),
+     'first_neuron':[4, 8, 16, 32, 64],
+     'hidden_layers':[0, 1, 2],
+     'batch_size': (2, 30, 10),
+     'epochs': [150],
+     'dropout': (0, 0.5, 5),
+     'weight_regulizer':[None],
+     'emb_output_dims': [None],
+     'optimizer': ['Adam', 'Nadam', 'RMSprop'],
+     'kernel_initializer': ['uniform','normal'],
+     'losses': ['mean_squared_error', 'mean_absolute_error'],
+     'activation':['relu', 'elu'],
+     'last_activation': ['relu', 'elu']}
+    return(p)
+
+def best_talos_parameters():
+    p = {'lr': 4.10,
+     'first_neuron': 64,
+     'hidden_layers': 2,
+     'batch_size': 21,
+     'epochs': 150,
+     'dropout': 0,
+     'weight_regulizer':[None],
+     'emb_output_dims': [None],
+     'optimizer': 'Nadam',
+     'kernel_initializer': 'uniform',
+     'losses': 'mean_absolute_error',
+     'activation': 'elu',
+     'last_activation': 'elu'}
+    return(p)
+
 def train_model(y, X, y_val=None, X_val=None, verbose=0, epochs=1000, batch_size=10, loss = "mae", callbacks = []):
     """ Train a Keras model
     
@@ -291,3 +357,291 @@ def predict(state, model, system = "2D_Muller"):
         return(result[0][0], result[0][1], result[0][2])
     if system == "RNA":
         pass
+
+
+def get_resname_int(resname):
+    if resname == 'A' or resname == 'ADE':
+        return 1
+    elif resname == 'G' or resname == 'GUA':
+        return 2
+    elif resname == 'C' or resname == 'CYT':
+        return 3
+    elif resname == 'U' or resname == 'URA':
+        return 4
+
+def get_resname_char(resname):
+    if resname == 1:
+        return 'ADE'
+    elif resname == 2:
+        return 'GUA'
+    elif resname == 3:
+        return 'CYT'
+    elif resname == 4:
+        return 'URA'
+
+def cT2features(ct, rna, is_dataframe = False):
+    # function to extract features from DSSR annotated secondary structure (.ct)
+    if is_dataframe:
+        df = ct
+    else:
+        df = pd.read_csv(ct, delim_whitespace=True,header=None,skiprows=1)
+         
+    length = len(df)
+    df.columns = ['resid','resname','i_minus_1','i_plus_1','i_bp','resid2']
+
+    #residue name of residue i
+    i_resname = df['resname'].apply(lambda x: get_resname_int(x)) # Series
+    i_resname_char = df['resname'].apply(lambda x: get_resname_char(get_resname_int(x))) 
+
+    #residue that base paired to i is (resname instead of resid):
+    i_bp = df['i_bp']
+    i_bp_resname = []
+    for i in range(length):
+      if i_bp[i] == 0:
+        i_bp_resname.append(0)
+      else:
+        i_bp_resname.append(get_resname_int(df[df['resid']==i_bp[i]]['resname'].values[0]))
+    i_bp_resname = pd.Series(i_bp_resname)
+
+    #residue that base paired to i-1 is:
+    i_minus_1_bp = df['i_bp'].values.tolist()
+    i_minus_1_bp = [0]+i_minus_1_bp # add 0 at the begining
+    i_minus_1_bp.pop() # delete last element
+    i_minus_1_bp_resname = []
+    for i in range(length):
+      if i_minus_1_bp[i] == 0:
+        i_minus_1_bp_resname.append(0)
+      else:
+        i_minus_1_bp_resname.append(get_resname_int(df[df['resid']==i_minus_1_bp[i]]['resname'].values[0]))
+    i_minus_1_bp_resname = pd.Series(i_minus_1_bp_resname)
+
+    #residue that base paired to i+1 is:
+    i_plus_1_bp = df['i_bp'].values.tolist()
+    i_plus_1_bp = i_plus_1_bp+[0] # add 0 at the end
+    i_plus_1_bp.pop(0) # delete last element
+    i_plus_1_bp_resname = []
+    for i in range(length):
+      if i_plus_1_bp[i] == 0:
+        i_plus_1_bp_resname.append(0)
+      else:
+        i_plus_1_bp_resname.append(get_resname_int(df[df['resid']==i_plus_1_bp[i]]['resname'].values[0]))
+    i_plus_1_bp_resname = pd.Series(i_plus_1_bp_resname)
+
+    #residue name of i-1
+    i_minus_1_resname = i_resname.values.tolist()
+    i_minus_1_resname = [0] + i_minus_1_resname
+    i_minus_1_resname.pop()
+    i_minus_1_resname = pd.Series(i_minus_1_resname)
+
+    #residue name of i+1
+    i_plus_1_resname = i_resname.values.tolist()
+    i_plus_1_resname = i_plus_1_resname+[0]
+    i_plus_1_resname.pop(0)
+    i_plus_1_resname = pd.Series(i_plus_1_resname) 
+
+    #the previous residue of the residue base paired to i: i_bp_minus_1
+    i_bp_minus_1 = list(map(lambda x: x-1, i_bp.values.tolist()))
+    i_bp_minus_1_resname = []
+    for i in range(length):
+      if i_bp_minus_1[i]==-1 or i_bp_minus_1[i]==0:
+        i_bp_minus_1_resname.append(0)
+      else:
+        i_bp_minus_1_resname.append(get_resname_int(df[df['resid']==i_bp_minus_1[i]]['resname'].values[0]))
+    i_bp_minus_1_resname = pd.Series(i_bp_minus_1_resname)
+
+    #the next residue of the residue base paired to i: i_bp_plus_1
+    i_bp_plus_1 = list(map(lambda x: x+1, i_bp.values.tolist()))
+    i_bp_plus_1_resname = []
+    for i in range(length):
+      if i_bp_plus_1[i]==1 or i_bp_plus_1[i]==(length+1):
+        i_bp_plus_1_resname.append(0)
+      else:
+        i_bp_plus_1_resname.append(get_resname_int(df[df['resid']==i_bp_plus_1[i]]['resname'].values[0]))  
+    i_bp_plus_1_resname = pd.Series(i_bp_plus_1_resname)
+
+    #i_bp_prev_bp
+    i_bp_minus_1_bp_resname = []
+    for i in range(length):
+      if i_bp_minus_1[i]==-1 or i_bp_minus_1[i]==0:
+        i_bp_minus_1_bp_resname.append(0)
+      else:
+        i_bp_minus_1_bp = df[df['resid']==i_bp_minus_1[i]]['i_bp'].values[0]
+        if i_bp_minus_1_bp == 0:
+          i_bp_minus_1_bp_resname.append(0)
+        else:
+          i_bp_minus_1_bp_resname.append(get_resname_int(df[df['resid']==i_bp_minus_1_bp]['resname'].values[0]))
+    i_bp_minus_1_bp_resname = pd.Series(i_bp_minus_1_bp_resname)
+
+    #i_bp_next_bp
+    i_bp_plus_1_bp_resname = []
+    for i in range(length):
+      if i_bp_plus_1[i]==1 or i_bp_plus_1[i]==(length+1):
+        i_bp_plus_1_bp_resname.append(0)
+      else:
+        i_bp_plus_1_bp = df[df['resid']==i_bp_plus_1[i]]['i_bp'].values[0]
+        if i_bp_plus_1_bp == 0:
+          i_bp_plus_1_bp_resname.append(0)
+        else:
+          i_bp_plus_1_bp_resname.append(get_resname_int(df[df['resid']==i_bp_plus_1_bp]['resname'].values[0]))  
+    i_bp_plus_1_bp_resname = pd.Series(i_bp_plus_1_bp_resname) 
+
+    # create other information as Series
+    rnaid = pd.Series([rna]*length)
+    total_length = pd.Series([length]*length)
+    resid = df['resid']
+    resname = df['resname']
+
+    #print(features)
+    features = pd.concat([rnaid, total_length, resid, resname, i_resname, i_minus_1_resname,
+    i_plus_1_resname, i_bp_resname, i_minus_1_bp_resname, i_plus_1_bp_resname, i_bp_minus_1_resname,
+    i_bp_plus_1_resname, i_bp_minus_1_bp_resname, i_bp_plus_1_bp_resname], axis=1)
+    features.columns = ["id","length","resid","i_resname_char","i_resname","i_minus_1_resname","i_plus_1_resname",
+                        "i_bp_resname", "i_minus_1_bp_resname", "i_plus_1_bp_resname", "i_bp_minus_1_resname",
+                        "i_bp_plus_1_resname", "i_bp_minus_1_bp_resname", "i_bp_plus_1_bp_resname"]
+    return features
+
+def rename_nucleus_type(nucleus):
+  if "'" in nucleus:
+    return nucleus.replace("'","p")
+  else:
+    return nucleus
+
+def load_data(id, type = "2D"):
+    """ load chemical shifts and get features for a specific dataset """ 
+    cs = pd.read_csv("data/chemical_shifts/%s.csv"%id, header=0, sep = "\s+")
+    
+    if type == "2D":
+        features = cT2features("data/secondary_structures/%s.ct"%id, id)
+    elif type == "3D":
+        features
+    else:
+        raise AssertionError()
+    tmp = cs.merge(features, on = ['id', 'resid'])
+    return(tmp[cs.columns], tmp[features.columns])
+
+def fit_hotencoder(all_features):
+    """ execute one-hot encoding of the features """
+    X = all_features.drop(['id','length','resid'], axis=1)
+    enc = preprocessing.OneHotEncoder(sparse = False)
+    enc.fit(X)
+    return(enc.transform(X), enc)
+
+def scaler(data):
+    """ applying standard scaler to data """
+    scaler = StandardScaler()
+    scaler.fit(data)
+    scaler.transform(data)
+    return (scaler)
+
+def load_entire_database(type = "2D", split_database = 0.2, id_list_file = "data/chemical_shifts/id.txt", header = 0):
+    """ loads chemical shifts and features for the entire  dataset """     
+    # read in file with list of ids (here simply the PDB ID associated with each RNA)
+    ids = pd.read_csv(id_list_file, header=header) 
+    
+    # initialize list that will store chemical shifts and features
+    all_cs, all_features = [],[]
+    
+    # loop over ids and get/generate data
+    for id in ids.id:
+        cs, features = load_data(id, type)    
+        all_cs.append(cs)
+        all_features.append(features)
+    all_cs = pd.concat(all_cs)    
+    all_features = pd.concat(all_features)    
+    
+    # carry out one-hot encoding of features to be used for training model
+    X, enc = fit_hotencoder(all_features)    
+    
+    # store entire database in a dictionary and return to user
+    database = {}
+    database['one-hot-encoder'] = enc
+    database['raw_features'] = all_features
+    database['raw_targets'] = all_cs
+    database['targets'] = all_cs.drop(['id', 'resid', 'resname', 'class'], axis=1)
+    database['features'] = X
+    
+    # split data
+    if split_database > 0: database['features_train'], database['features_test'], database['targets_train'], database['targets_test'] = train_test_split(database['features'], database['targets'], test_size = 0.2, random_state=42)
+        
+    # scale targets and add to database
+    database['scaler'] = scaler(database['targets_train'])
+    database['targets_train_scaled'] = database['scaler'].transform(database['targets_train'])
+    database['targets_test_scaled'] = database['scaler'].transform(database['targets_test'])
+    return(database)
+
+def CS_list_merge(expCS, predCS, nuclei):
+    df = []
+    for i,nucleus in enumerate(nuclei):
+        v1 = expCS.iloc[:,i].values
+        v2 = predCS.iloc[:,i].values
+        n = [nucleus for i in range(len(v1))]
+        df.append(pd.DataFrame({"nucleus": n, "expCS": v1, "predCS": v2}))
+    df = pd.concat(df)
+    return(df)
+
+
+def setup_tensorboard(model_path = './new_logs'):    
+    try:
+        os.rmdir(model_path) 
+    except:
+        pass
+
+    tensorboard = TensorBoard(
+      log_dir=model_path,
+      histogram_freq=1,
+      write_images=True
+    )
+    return(tensorboard)
+
+    
+def get_model_uncertainity(model, database, output_file):
+    """ Compute the uncertainity of a model 
+        Input:
+            model: trained Keras model
+            database: dictionary storing the data for training and testing the model
+            output_file: path to output file that will store the information
+        Returns:
+            uncertainity: dataFrame with uncertainity estimates for a model    
+            chemical_shifts: dataFrame with predicted and experimental chemical shfit paired
+    """
+    nuclei = "C1' C2' C3' C4' C5' C2 C5 C6 C8 H1' H2' H3' H4' H5' H5'' H2 H5 H6 H8".split()
+    
+    # create DataFrame with (a) predicted and then (b) experimental chemical shifts
+    predCS = pd.DataFrame.from_records(database['scaler'].inverse_transform(model.predict(database['features_test'])))
+    expCS =  pd.DataFrame.from_records(database['scaler'].inverse_transform(database['targets_test_scaled']))
+    
+    # merge them
+    chemical_shifts = CS_list_merge(expCS, predCS, nuclei)
+    chemical_shifts['error'] = np.absolute(chemical_shifts.expCS.values - chemical_shifts.predCS.values)
+    initial = predCS.columns.values
+    predCS.columns = ["pred_"+str(i) for i in initial]
+    expCS.columns = ["exp_"+str(i) for i in initial]
+    
+    # compute errors
+    maes = []
+    for i,nucleus in enumerate(nuclei):
+        tmp = chemical_shifts[chemical_shifts.nucleus==nucleus]
+        mae = mean_absolute_error(tmp.expCS.values, tmp.predCS.values)
+        maes.append(mae)
+        print("Nucleus: %s MAE: %4.3f ppm"%(nucleus, mae))
+    uncertainity = pd.DataFrame({"nucleus": nuclei, "error":maes})
+    uncertainity.to_csv(output_file, sep=' ', header=None, index=False)
+    return(uncertainity, chemical_shifts)
+
+
+def features2CS(features, model, encoder, scaler):
+    """ Computes chemical shifts from a set of features
+        Input:
+            features: raw features returned by ```cT2features()```
+            model: trained Keras model
+            one-hot encoder: feature encoder (e.g. one stored in the database dictionary returned by ```load_entire_database()```)
+            scaler: target scaler (e.g. one stored in the database dictionary returned by ```load_entire_database()```)      
+        Returns:
+            predCS: dataFrame with predicted (computed) chemical shifts
+    """
+    nuclei = "C1' C2' C3' C4' C5' C2 C5 C6 C8 H1' H2' H3' H4' H5' H5'' H2 H5 H6 H8".split()    
+    X = features.drop(['id','length','resid'], axis=1)
+    X = encoder.transform(X)    
+    predCS = pd.DataFrame.from_records(scaler.inverse_transform(model.predict(X)))    
+    predCS.columns = nuclei
+    return(predCS)
