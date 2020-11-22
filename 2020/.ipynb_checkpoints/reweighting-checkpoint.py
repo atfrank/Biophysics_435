@@ -3,6 +3,58 @@ import numpy as np
 import os
 import BME.bme_reweight as bme
 
+def BME_find_weights(expcs, sim, theta, conformers):
+  # generate random weights 
+  w0 = np.random.random(conformers)
+  # normalize
+  w0 /= np.sum(w0)
+
+  # initialize reweighting class with weights                                                                                                                                
+  bmea = bme.Reweight(verbose=False, w0=list(w0))
+  bmea.load(expcs, sim)
+  chi2_before,chi2_after, srel = bmea.optimize(theta=theta)
+  return list(np.round_(bmea.get_weights(), 5)), list(np.round_(chi2_after, 5))
+ 
+def save_bme_results(tmp, filename):
+  mean_w, sd_w = [], []
+  for i in range(0, tmp.shape[0]):
+    w = []
+    tmp2 = tmp[i,:,:]    
+    for j in range(0, tmp2.shape[1]):
+      w.append(np.mean(tmp2[:,j]))
+      w.append(np.std(tmp2[:,j]))
+    mean_w.append(w)
+  pd.DataFrame.from_records(mean_w).to_csv(filename, sep=' ', header=None, index=False)
+
+def add_accuracy(row):
+  if "C" in row['nucleus']:
+    return 0.84
+  else:
+    return 0.11
+
+def BME_find_theta(expcs, sim, theta):
+  bmea = bme.Reweight(verbose=False)
+  # load data
+  bmea.load(expcs, sim)
+  chi2_before,chi2_after, srel = bmea.optimize(theta=theta)
+  return chi2_after
+
+  # initialize reweighting class with weights                                                                                                                                
+  bmea = bme.Reweight(verbose=False)
+  bmea.load(expcs, sim)
+  chi2_before,chi2_after, srel = bmea.optimize(theta=theta)
+  return list(np.round_(bmea.get_weights(), 5))
+
+def null_weights(N=18):
+  return([float(1/N) for i in range(0, N)])
+
+def load_ss2cs_model(nucleus, rna = '', DIR_PATH = '/content/drive/My Drive/RESEARCH/ss2cs/'):
+  ''' load save model '''
+  filename = DIR_PATH + 'output/RF_'+ rna + nucleus + '.sav'
+  model = pickle.load(open(filename, 'rb'))
+  return(model)
+
+
 def write_BME_chemical_shifts(input_exp = "data/chemical_shifts/measured_shifts_ 7JU1.dat", 
                               input_sim = "data/chemical_shifts/computed_shifts_7JU1.dat",
                               input_accuracy = "data/chemical_shifts/uncertainity.dat",
