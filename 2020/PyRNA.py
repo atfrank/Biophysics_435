@@ -372,4 +372,12 @@ def states2averaged_base_matrix(states):
         else:
             bp_matrix += tmp
     return(bp_matrix/nstates)
-    
+
+# Genetic Algorithim [Optional Self Study]
+def ga2stems(ga):
+    filtered_X = []
+    X = ga.output_dict['variable']
+    [filtered_X.append(int(x)) for x in X if x not in filtered_X]
+    if -1 in filtered_X: filtered_X.remove(-1)
+    return(filtered_X)
+ 
