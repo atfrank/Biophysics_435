@@ -1,7 +1,4 @@
-get_ipython().run_cell_magic("capture", "", """!pip install geneticalgorithm""")
-
-
-import geneticalgorithm as ga 
+from geneticalgorithm.geneticalgorithm import geneticalgorithm as ga
 import network_line_graph as nlg
 from myga import run_genetic_algorithm
 from PyRNA import initialize_RNA, CT2basepair_matrix, check_compatibility, ga2stems, state2basepair_matrix, visualize_structure
@@ -18,15 +15,17 @@ results['TAR']['models'], results['TAR']['states'] = run_genetic_algorithm(seque
                                                                            iterations = 200, population_size=30)
 
 
+from PyRNA import states2averaged_base_matrix
 visualize_structure(states2averaged_base_matrix(results['TAR']['states']), label = "Average")
 visualize_structure(results['TAR']['bp'], label = "Acutal")
 
 
 import joblib
 filename = 'data/states_HIV_TAR.sav'
-joblib.dump(results, filename)
+joblib.dump(results['TAR']['states'], filename)
 
 
-state = results['TAR']['states'][0]
+from PyRNA import state2CT
+state = results['TAR']['states'][195]
 visualize_structure(state2basepair_matrix(state))
 state2CT(state)
