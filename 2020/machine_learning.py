@@ -249,7 +249,7 @@ def talos_model(x_train, y_train, x_val, y_val, params):
 def talos_search_space():
     p = {'lr': (0.5, 5, 10),
      'first_neuron':[4, 8, 16, 32, 64],
-     'hidden_layers':[0, 1, 2],
+     'hidden_layers':[0, 1, 2, 4, 8],
      'batch_size': (2, 30, 10),
      'epochs': [150],
      'dropout': (0, 0.5, 5),
