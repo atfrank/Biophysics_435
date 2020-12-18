@@ -7,6 +7,36 @@ import matplotlib.pyplot as plt
 import network_line_graph as nlg
 import pandas as pd
 
+def dotfile2bp(ssfile):
+    ss = pd.read_csv(ssfile, header=None, sep = " ")
+    ss = list(ss[0].values)
+    bp_matrix = dot2bp(sequences=ss)
+    return(bp_matrix)
+
+def dot2bp(sequences = ["((((........))))...(..(((((..)))))...)........."], matrix = None):
+    ''' Take a list of dot brackets and returns a consensus base-pair matrix '''
+    # https://stackoverflow.com/questions/29991917/indices-of-matching-parentheses-in-python/29992065
+
+    for sequence in sequences:
+        istart = []  # stack of indices of opening parentheses
+        d = {}
+        n = len(sequence)
+        if matrix is None:
+            matrix = np.zeros((n, n))
+        for i, c in enumerate(sequence):
+                if c == '(':
+                        istart.append(i)
+                if c == ')':
+                        try:
+                                j = istart.pop()
+                                d[j] = i
+                                matrix[i,j], matrix[j,i] = 1, 1                      
+                        except IndexError:
+                                print('Too many closing parentheses')
+        if istart:  # check if stack is empty afterwards
+                print('Too many opening parentheses')
+    return(matrix)
+
 def visualize_structure(bp_matrix, label = 'UUCG-tetraloop', edge_cmap = plt.cm.viridis):
   # initialise figure
   fig, ax = plt.subplots(1,1)
